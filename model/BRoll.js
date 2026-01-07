@@ -6,7 +6,7 @@ const BRollSchema = new mongoose.Schema({
   file_name: { type: String, required: true },
   description: { type: String, required: true },
   duration_sec: { type: Number, default: 2.5 },
-  embedding: { type: [Number], default: [] },
+  embedding: { type: [String], default: [] },
   used: { type: Boolean, default: false }
 }, { timestamps: true });
 

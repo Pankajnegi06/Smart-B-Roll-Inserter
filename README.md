@@ -8,11 +8,15 @@ AI-powered semantic video editing tool that automatically inserts relevant B-rol
 ## ✨ Features
 
 - **Automatic Transcription** - Transcribes A-roll audio using Groq Whisper
-- **Semantic Matching** - Uses Llama 3.3 70B to match B-roll clips with spoken content
+- **Automated B-Roll Analysis** - Uses **Llama 4 Scout** (Vision) to auto-describe B-roll clips
+- **Semantic Embeddings** - Generates semantic concept embeddings for matching
+- **LLM Matching** - Uses Llama 3.3 70B for intelligent B-roll selection
 - **Confidence Scoring** - AI-generated confidence scores (0.0-1.0) for each match
+- **Hybrid Approach** - Combines embedding similarity with LLM reasoning
 - **Timeline Generation** - Creates JSON timeline with insertion points
 - **Video Rendering** - FFmpeg-based video composition with B-roll overlays
-- **Modern UI** - Glassmorphism design with video preview and download
+- **Modern UI** - Glassmorphism design with Transcript Viewer and Video Preview
+- **Auto-Regeneration** - Ability to regenerate descriptions for existing B-rolls
 
 ## 🛠️ Tech Stack
 
@@ -21,8 +25,8 @@ AI-powered semantic video editing tool that automatically inserts relevant B-rol
 | Backend | Node.js, Express |
 | Frontend | React, Vite, Tailwind CSS |
 | Database | MongoDB |
-| AI/LLM | Groq (Whisper + Llama 3.3) |
-| Video Processing | FFmpeg |
+| AI/LLM | Groq (Whisper, Llama 3.3, Llama 4 Scout Vision) |
+| Video Processing | FFmpeg, fluent-ffmpeg |
 
 ---
 

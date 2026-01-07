@@ -103,8 +103,9 @@ pipelineRouter.post("/upload-broll", uploadBroll.single("video"), async (req, re
 
     const { description, duration } = req.body;
 
-    if (!description) {
-      return res.status(400).json({ error: "Description is required for B-roll" });
+    // Description is optional now (auto-generated if missing)
+    if (description && description.trim().length < 3) {
+       return res.status(400).json({ error: "Description must be at least 3 characters" });
     }
 
     const result = await describeBroll({
@@ -134,6 +135,57 @@ pipelineRouter.get("/brolls", async (req, res) => {
     const brolls = await getAllBrolls();
     res.json({ success: true, data: brolls });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Regenerate descriptions for B-rolls with generic/fallback descriptions
+ * POST /api/pipeline/regenerate-descriptions
+ */
+pipelineRouter.post("/regenerate-descriptions", async (req, res) => {
+  try {
+    const brolls = await getAllBrolls();
+    const genericDescriptions = ["A generic video clip", "Unidentified video clip", "Unidentified B-roll footage"];
+    
+    const brollsToFix = brolls.filter(b => 
+      genericDescriptions.some(gd => b.description?.includes(gd)) || 
+      !b.description || 
+      b.description.length < 10
+    );
+
+    if (brollsToFix.length === 0) {
+      return res.json({ success: true, message: "No B-rolls need regeneration", fixed: 0 });
+    }
+
+    console.log(`🔄 Regenerating descriptions for ${brollsToFix.length} B-rolls...`);
+
+    // Import the regeneration functions
+    const { regenerateBrollDescription } = await import("../services/broll/describer.js");
+
+    let fixed = 0;
+    const results = [];
+
+    for (const broll of brollsToFix) {
+      try {
+        const newDescription = await regenerateBrollDescription(broll.broll_id, broll.file_path);
+        results.push({ broll_id: broll.broll_id, old: broll.description, new: newDescription });
+        fixed++;
+      } catch (err) {
+        console.error(`Failed to regenerate ${broll.broll_id}: ${err.message}`);
+        results.push({ broll_id: broll.broll_id, error: err.message });
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Regenerated ${fixed}/${brollsToFix.length} descriptions`,
+      fixed,
+      results
+    });
+
+  } catch (error) {
+    console.error("Regeneration error:", error);
     res.status(500).json({ error: error.message });
   }
 });

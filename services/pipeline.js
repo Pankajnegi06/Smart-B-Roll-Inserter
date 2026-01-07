@@ -72,22 +72,53 @@ export async function processARoll(filePath, fileName) {
 }
 
 /**
- * Generate embeddings (DEPRECATED - Kept for compatibility but does nothing)
+ * Generate embeddings for segments and B-rolls
+ * Uses semantic concept extraction for matching
  */
 export async function generateEmbeddings() {
-  console.log("\n🧠 Embeddings skipped (Using Groq LLM for matching)");
-  
-  // Mark all pending A-rolls as processed so they can be picked up by the matcher
-  const result = await ARoll.updateMany(
-    { processed: false },
-    { processed: true }
-  );
-  
-  if (result.modifiedCount > 0) {
-    console.log(`  ✓ Marked ${result.modifiedCount} A-rolls as ready for matching`);
+  console.log("\n🧠 Generating Embeddings...");
+
+  // Import embedder
+  const { embedSegments, embedBrolls, embedText } = await import("./matching/embedder.js");
+
+  // Get unprocessed A-rolls
+  const arolls = await ARoll.find({ processed: false });
+  const brolls = await BRoll.find({});
+
+  if (arolls.length === 0 && brolls.length === 0) {
+    console.log("  ⚠ No items to embed");
+    // Still mark any pending as processed
+    await ARoll.updateMany({ processed: false }, { processed: true });
+    return { arolls_embedded: 0, brolls_embedded: 0 };
   }
 
-  return { arolls_embedded: 0, brolls_embedded: 0 };
+  let arollsEmbedded = 0;
+  let brollsEmbedded = 0;
+
+  // Embed A-roll segments
+  for (const aroll of arolls) {
+    console.log(`  → Embedding segments for ${aroll.aroll_id}...`);
+    const embeddedSegments = await embedSegments(aroll.segments);
+    aroll.segments = embeddedSegments;
+    aroll.processed = true;
+    await aroll.save();
+    arollsEmbedded++;
+  }
+
+  // Embed B-rolls (if not already embedded)
+  for (const broll of brolls) {
+    if (!broll.embedding || broll.embedding.length === 0) {
+      console.log(`  → Embedding B-roll ${broll.broll_id}...`);
+      const embedding = await embedText(broll.description);
+      // Use updateBrollEmbedding to avoid Mongoose CastError with Mixed types
+      console.log(`    > Generated embedding:`, embedding);
+      await updateBrollEmbedding(broll.broll_id, embedding);
+      brollsEmbedded++;
+    }
+  }
+
+  console.log(`  ✓ Embedded ${arollsEmbedded} A-rolls, ${brollsEmbedded} B-rolls`);
+  return { arolls_embedded: arollsEmbedded, brolls_embedded: brollsEmbedded };
 }
 
 /**
@@ -116,7 +147,7 @@ export async function runMatchingPipeline() {
 
   for (const aroll of arolls) {
     // Call Groq LLM for this A-roll
-    const { allocations } = await matchAndAllocate(aroll.segments, brolls, aroll.aroll_id);
+    const { allocations, stats } = await matchAndAllocate(aroll.segments, brolls, aroll.aroll_id);
     allAllocations.push(...allocations);
 
     // Build timeline
@@ -136,8 +167,12 @@ export async function runMatchingPipeline() {
 
   return {
     success: true,
-    matchStats: { avgSimilarity: 0.95, maxSimilarity: 1.0 }, // Mock stats
-    allocationStats: { totalAllocations: allAllocations.length },
+    matchStats: { 
+      totalAllocations: allAllocations.length,
+      avgConfidence: allAllocations.length > 0 
+        ? +(allAllocations.reduce((a, b) => a + b.confidence, 0) / allAllocations.length).toFixed(2) 
+        : 0
+    },
     timelines
   };
 }
@@ -192,6 +227,6 @@ export async function getPipelineStatus() {
       embedded: embeddedBrolls.length,
       pending: brolls.length - embeddedBrolls.length
     },
-    ready: processedArolls.length > 0 && embeddedBrolls.length > 0
+    ready: processedArolls.length > 0 && brolls.length > 0
   };
 }

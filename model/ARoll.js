@@ -13,7 +13,7 @@ const SegmentSchema = new mongoose.Schema({
   end_sec: { type: Number, required: true },
   text: { type: String, required: true },
   eligible: { type: Boolean, default: true },
-  embedding: { type: [Number], default: [] }
+  embedding: { type: [String], default: [] }
 });
 
 const ARollSchema = new mongoose.Schema({

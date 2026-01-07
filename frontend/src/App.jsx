@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from './services/api';
+import { TranscriptViewer } from './components/TranscriptViewer';
 
 function App() {
   const [status, setStatus] = useState(null);
@@ -66,7 +67,7 @@ function App() {
   };
 
   const handleBrollUpload = async () => {
-    if (!brollFile || !brollDescription) return;
+    if (!brollFile) return; // Description is optional now
     try {
       setPipelineStatus('processing');
       await api.uploadBRoll(brollFile, brollDescription, setUploadProgress);
@@ -88,9 +89,29 @@ function App() {
   const runPipeline = async () => {
     try {
       setPipelineStatus('processing');
+      const previousArollId = selectedTimeline?.aroll_id;
+      
       await api.runFullPipeline();
       setPipelineStatus('success');
-      fetchData();
+      
+      // Fetch updated data
+      const [arollsData, brollsData, timelinesData] = await Promise.all([
+        api.getARolls(),
+        api.getBRolls(),
+        api.getTimelines()
+      ]);
+      
+      setArolls(arollsData.data);
+      setBrolls(brollsData.data);
+      setTimelines(timelinesData.data);
+      
+      // Auto-refresh selected timeline if one was selected
+      if (previousArollId) {
+        const updatedTimeline = timelinesData.data.find(t => t.aroll_id === previousArollId);
+        if (updatedTimeline) {
+          setSelectedTimeline(updatedTimeline);
+        }
+      }
     } catch (error) {
       console.error("Pipeline error:", error);
       setPipelineStatus('error');
@@ -129,6 +150,10 @@ function App() {
   };
 
   const isPipelineReady = arolls.length > 0 && brolls.length > 0;
+
+  const selectedARoll = selectedTimeline 
+    ? arolls.find(a => a.aroll_id === selectedTimeline.aroll_id)
+    : null;
 
   return (
     <div className="min-h-screen text-white p-8">
@@ -277,13 +302,16 @@ function App() {
             </div>
 
             <textarea
-              placeholder="Describe the clip (e.g., 'street food cooking close-up')..."
+              placeholder="Describe the clip (optional - AI will auto-generate if empty)..."
               value={brollDescription}
               onChange={(e) => setBrollDescription(e.target.value)}
               className="w-full glass-input h-24 resize-none"
             />
+            <p className="text-xs text-white/40 mt-2 px-1">
+              ℹ️ Tip: Providing a detailed description manually will result in better semantic matching accuracy than auto-generation.
+            </p>
 
-            {brollFile && brollDescription && (
+            {brollFile && (
               <button 
                 onClick={handleBrollUpload}
                 disabled={pipelineStatus === 'processing'}
@@ -344,172 +372,176 @@ function App() {
           </div>
         </div>
 
-        {/* Timeline Viewer */}
-        <div className="glass-card space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold flex items-center gap-3">
-              <span className="text-2xl">📊</span> Timeline Viewer
-            </h2>
-            <select 
-              className="glass-input min-w-[200px]"
-              onChange={(e) => {
-                const tl = timelines.find(t => t.aroll_id === e.target.value);
-                setSelectedTimeline(tl);
-              }}
-            >
-              <option value="">Select Timeline...</option>
-              {timelines.map(tl => (
-                <option key={tl.aroll_id} value={tl.aroll_id}>
-                  {tl.aroll_id} ({tl.insertions.length} insertions)
-                </option>
-              ))}
-            </select>
+        {/* Timeline & Transcript Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Timeline Viewer */}
+          <div className="glass-card space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold flex items-center gap-3">
+                <span className="text-2xl">📊</span> Timeline Viewer
+              </h2>
+              <select 
+                className="glass-input min-w-[200px]"
+                onChange={(e) => {
+                  const tl = timelines.find(t => t.aroll_id === e.target.value);
+                  setSelectedTimeline(tl);
+                }}
+              >
+                <option value="">Select Timeline...</option>
+                {timelines.map(tl => (
+                  <option key={tl.aroll_id} value={tl.aroll_id}>
+                    {tl.aroll_id} ({tl.insertions.length} insertions)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedTimeline ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-white/5 rounded-xl border border-white/10">
+                  <div className="flex justify-between text-sm text-white/60 mb-4">
+                    <div className="flex gap-4">
+                      <span>Duration: {selectedTimeline.aroll_duration_sec}s</span>
+                      <span>Insertions: {selectedTimeline.insertions.length}</span>
+                    </div>
+                    {selectedTimeline.updatedAt && (
+                      <span className="text-white/40">
+                        Updated: {new Date(selectedTimeline.updatedAt).toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                    {selectedTimeline.insertions.map((ins, i) => (
+                      <div key={i} className="flex gap-4 p-3 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors">
+                        <div className="flex-shrink-0 w-24 text-center p-2 bg-blue-500/10 rounded border border-blue-500/20">
+                          <div className="text-lg font-bold text-blue-400">{ins.start_sec}s</div>
+                          <div className="text-xs text-blue-300/60">Start Time</div>
+                        </div>
+                        <div className="flex-grow">
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="font-medium text-purple-300">{ins.broll_id}</span>
+                            <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded-full border border-green-500/20">
+                              {(ins.confidence * 100).toFixed(0)}% Match
+                            </span>
+                          </div>
+                          <p className="text-sm text-white/70">{ins.reason}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+
+              </div>
+            ) : (
+              <div className="text-center py-12 text-white/40">
+                Select a timeline to view insertions
+              </div>
+            )}
           </div>
 
-          {selectedTimeline ? (
-            <div className="space-y-4">
-              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
-                <div className="flex justify-between text-sm text-white/60 mb-4">
-                  <span>Duration: {selectedTimeline.aroll_duration_sec}s</span>
-                  <span>Insertions: {selectedTimeline.insertions.length}</span>
-                </div>
-                
-                <div className="space-y-3">
-                  {selectedTimeline.insertions.map((ins, i) => (
-                    <div key={i} className="flex gap-4 p-3 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors">
-                      <div className="flex-shrink-0 w-24 text-center p-2 bg-blue-500/10 rounded border border-blue-500/20">
-                        <div className="text-lg font-bold text-blue-400">{ins.start_sec}s</div>
-                        <div className="text-xs text-blue-300/60">Start Time</div>
-                      </div>
-                      <div className="flex-grow">
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="font-medium text-purple-300">{ins.broll_id}</span>
-                          <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded-full border border-green-500/20">
-                            {(ins.confidence * 100).toFixed(0)}% Match
-                          </span>
-                        </div>
-                        <p className="text-sm text-white/70">{ins.reason}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-6">
-                {/* JSON Output - Collapsible with Copy Button */}
-                <details className="group">
-                  <summary className="flex justify-between items-center cursor-pointer p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-4 h-4 text-white/60 group-open:rotate-90 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                      <span className="text-sm font-medium text-white/80">Timeline JSON</span>
-                      <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-300 rounded-full">
-                        {selectedTimeline.insertions.length} insertions
-                      </span>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        navigator.clipboard.writeText(JSON.stringify(selectedTimeline, null, 2));
-                        setJsonCopied(true);
-                        setTimeout(() => setJsonCopied(false), 2000);
-                      }}
-                      className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg border border-blue-500/20 text-xs transition-colors flex items-center gap-2"
-                    >
-                      {jsonCopied ? (
-                        <>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Copied!
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                          Copy
-                        </>
-                      )}
-                    </button>
-                  </summary>
-                  <pre className="mt-2 bg-black/40 p-4 rounded-xl overflow-x-auto text-xs font-mono border border-white/5 max-h-80 overflow-y-auto">
-                    <code className="text-green-400">
-                      {JSON.stringify(selectedTimeline, null, 2)}
-                    </code>
-                  </pre>
-                </details>
-
-                {/* Render Button and Video Player */}
-                <div className="text-center space-y-4">
-                  <button 
-                    onClick={handleRender}
-                    disabled={renderStatus === 'processing'}
-                    className="glass-btn bg-emerald-600/80 hover:bg-emerald-600 hover:shadow-emerald-500/20 px-8 py-3 flex items-center gap-2 mx-auto"
-                  >
-                    {renderStatus === 'processing' ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        Rendering Video...
-                      </>
-                    ) : (
-                      <>
-                        <span>🎬</span> Render Final Video
-                      </>
-                    )}
-                  </button>
-
-                  {renderStatus === 'success' && renderedVideoPath && (
-                    <div className="p-6 bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-xl animate-in fade-in space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-green-300 flex items-center gap-2">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Render Complete!
-                        </h4>
-                        <a
-                          href={`http://localhost:8080/${renderedVideoPath.replace(/\\/g, '/')}`}
-                          download
-                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                          </svg>
-                          Download Video
-                        </a>
-                      </div>
-                      
-                      <video 
-                        src={`http://localhost:8080/${renderedVideoPath.replace(/\\/g, '/')}`}
-                        controls
-                        className="w-full rounded-lg border border-white/10 shadow-2xl"
-                      >
-                        Your browser does not support the video tag.
-                      </video>
-                      
-                      <p className="text-xs text-white/50 text-center font-mono break-all">
-                        {renderedVideoPath}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {renderStatus === 'error' && (
-                    <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-xl animate-in fade-in">
-                      <h4 className="font-bold text-red-300 mb-1">❌ Render Failed</h4>
-                      <p className="text-sm text-white/70">Check backend console for details.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+          {/* Transcript Viewer */}
+          {selectedTimeline && selectedARoll ? (
+            <TranscriptViewer 
+              sentences={selectedARoll.sentences} 
+              insertions={selectedTimeline.insertions} 
+            />
           ) : (
-            <div className="text-center py-12 text-white/40">
-              Select a timeline to view insertions
+            <div className="glass-card flex items-center justify-center text-white/40">
+              Select a timeline to view transcript
             </div>
           )}
         </div>
+
+        {/* Export & Details Section */}
+        {selectedTimeline && (
+          <div className="glass-card space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+              <div className="p-2 bg-emerald-500/20 rounded-lg">🚀</div>
+              <h2 className="text-xl font-semibold">Export & Details</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* JSON Data */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-medium text-white/80">Timeline Data</h3>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigator.clipboard.writeText(JSON.stringify(selectedTimeline, null, 2));
+                      setJsonCopied(true);
+                      setTimeout(() => setJsonCopied(false), 2000);
+                    }}
+                    className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg border border-blue-500/20 text-xs transition-colors"
+                  >
+                    {jsonCopied ? 'Copied!' : 'Copy JSON'}
+                  </button>
+                </div>
+                <div className="bg-black/40 p-4 rounded-xl border border-white/5 h-64 overflow-y-auto custom-scrollbar font-mono text-xs">
+                  <code className="text-green-400 whitespace-pre-wrap">
+                    {JSON.stringify(selectedTimeline, null, 2)}
+                  </code>
+                </div>
+              </div>
+
+              {/* Render Controls */}
+              <div className="space-y-6 flex flex-col justify-center">
+                <div className="text-center space-y-2">
+                  <h3 className="text-lg font-medium text-white/80">Render Final Video</h3>
+                  <p className="text-sm text-white/50">
+                    Combine A-Roll and B-Rolls into a single video file based on the generated timeline.
+                  </p>
+                </div>
+
+                <button 
+                  onClick={handleRender}
+                  disabled={renderStatus === 'processing'}
+                  className="w-full glass-btn bg-emerald-600/80 hover:bg-emerald-600 hover:shadow-emerald-500/20 px-8 py-4 flex items-center justify-center gap-3 text-lg font-semibold"
+                >
+                  {renderStatus === 'processing' ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Rendering Video...
+                    </>
+                  ) : (
+                    <>
+                      <span>🎬</span> Start Rendering
+                    </>
+                  )}
+                </button>
+
+                {renderStatus === 'success' && renderedVideoPath && (
+                  <div className="p-4 bg-green-500/20 border border-green-500/30 rounded-xl animate-in fade-in space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-green-300">Render Complete!</h4>
+                      <a
+                        href={`http://localhost:8080/${renderedVideoPath.replace(/\\/g, '/')}`}
+                        download
+                        className="text-xs bg-green-600 px-3 py-1.5 rounded-lg text-white hover:bg-green-700 font-medium"
+                      >
+                        Download MP4
+                      </a>
+                    </div>
+                    <video 
+                      src={`http://localhost:8080/${renderedVideoPath.replace(/\\/g, '/')}`}
+                      controls
+                      className="w-full rounded-lg border border-white/10 shadow-lg"
+                    />
+                  </div>
+                )}
+                
+                {renderStatus === 'error' && (
+                  <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-xl animate-in fade-in text-center">
+                    <h4 className="font-bold text-red-300 mb-1">❌ Render Failed</h4>
+                    <p className="text-sm text-white/70">Please check the backend console for error details.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

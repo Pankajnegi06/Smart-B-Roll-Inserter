@@ -28,7 +28,7 @@ export async function matchAndAllocate(segments, brolls, arollId) {
     .map(b => `- [${b.broll_id}]: "${b.description}"`)
     .join("\n");
 
-  // 2. Construct Prompt with stricter rules
+  // 2. Construct Prompt with balanced rules
   const prompt = `
 You are an expert Video Editor. Your task is to insert B-roll clips into an A-roll video to make it visually engaging.
 
@@ -39,10 +39,10 @@ ${segmentContext}
 ${brollContext}
 
 ### CRITICAL Rules & Constraints
-1. **Semantic Relevance (STRICT)**: The B-roll MUST have a CLEAR and DIRECT semantic connection to the spoken content.
-   - ❌ REJECT any B-roll with vague, nonsense, or garbage descriptions (e.g., "kuch bhi", "asdf", "test", random text)
-   - ❌ REJECT if you cannot explain a clear visual connection
-   - ✅ ONLY accept if there's an obvious thematic or visual match
+1. **Semantic Relevance**: The B-roll MUST have a semantic connection to the spoken content.
+   - ✅ Accept B-rolls whose description relates to topics mentioned by the speaker
+   - ✅ Accept AI-generated descriptions (e.g., "A person cooking in a kitchen")
+   - ❌ ONLY reject B-rolls with truly meaningless descriptions (e.g., "kuch bhi", "asdf", "test123")
 
 2. **Confidence Scoring**: For each match, provide a confidence score from 0.0 to 1.0:
    - 0.9-1.0: Perfect match (e.g., speaker says "sunset" → B-roll shows sunset)
@@ -67,7 +67,7 @@ ${brollContext}
   ]
 }
 
-IMPORTANT: If a B-roll description is nonsensical, random text, or doesn't clearly describe visual content, DO NOT use it regardless of what segments are available.
+IMPORTANT: Prioritize using ALL available semantically-relevant B-rolls. Only reject B-rolls if the description is truly unintelligible.
 `;
 
   // 3. Call Groq API
@@ -101,6 +101,8 @@ IMPORTANT: If a B-roll description is nonsensical, random text, or doesn't clear
     console.log(`  → Groq suggested ${rawAllocations.length} matches`);
 
     // 4. Transform and VALIDATE allocations
+    const usedBrolls = new Set();
+    
     const finalAllocations = rawAllocations
       .map(alloc => {
         const segment = segments.find(s => s.segment_id === alloc.segment_id);
@@ -111,10 +113,18 @@ IMPORTANT: If a B-roll description is nonsensical, random text, or doesn't clear
           return null;
         }
 
+        // STRICT UNIQUENESS CHECK
+        if (usedBrolls.has(alloc.broll_id)) {
+          console.warn(`  ⚠️ Skipping duplicate B-roll usage: ${alloc.broll_id}`);
+          return null;
+        }
+
         // Use LLM-provided confidence, default to 0.5 if missing
         const confidence = typeof alloc.confidence === 'number' 
           ? Math.min(1, Math.max(0, alloc.confidence)) 
           : 0.5;
+
+        usedBrolls.add(alloc.broll_id);
 
         return {
           aroll_id: arollId,
