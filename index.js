@@ -6,10 +6,28 @@ import { router } from "./router/transcribe.route.js"
 import { pipelineRouter } from "./router/pipeline.route.js"
 
 
+import fs from "fs";
+
 dotenv.config(".env")
 
 const PORT = process.env.PORT || 8080
 const app = express()
+
+// Ensure required directories exist
+const dirs = [
+  "uploads",
+  "uploads/aroll",
+  "uploads/broll",
+  "uploads/temp",
+  "exports"
+];
+
+dirs.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`Created directory: ${dir}`);
+  }
+});
 
 connectDB()
 
