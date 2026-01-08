@@ -89,7 +89,6 @@ function App() {
   const runPipeline = async () => {
     try {
       setPipelineStatus('processing');
-      const previousArollId = selectedTimeline?.aroll_id;
       
       await api.runFullPipeline();
       setPipelineStatus('success');
@@ -105,12 +104,13 @@ function App() {
       setBrolls(brollsData.data);
       setTimelines(timelinesData.data);
       
-      // Auto-refresh selected timeline if one was selected
-      if (previousArollId) {
-        const updatedTimeline = timelinesData.data.find(t => t.aroll_id === previousArollId);
-        if (updatedTimeline) {
-          setSelectedTimeline(updatedTimeline);
-        }
+      // Auto-select the newest timeline (last in the array, or by updatedAt)
+      if (timelinesData.data && timelinesData.data.length > 0) {
+        // Sort by updatedAt descending to get the newest timeline
+        const sortedTimelines = [...timelinesData.data].sort((a, b) => 
+          new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+        );
+        setSelectedTimeline(sortedTimelines[0]);
       }
     } catch (error) {
       console.error("Pipeline error:", error);
@@ -382,9 +382,10 @@ function App() {
               </h2>
               <select 
                 className="glass-input min-w-[200px]"
+                value={selectedTimeline?.aroll_id || ''}
                 onChange={(e) => {
                   const tl = timelines.find(t => t.aroll_id === e.target.value);
-                  setSelectedTimeline(tl);
+                  setSelectedTimeline(tl || null);
                 }}
               >
                 <option value="">Select Timeline...</option>
