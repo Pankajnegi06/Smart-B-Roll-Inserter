@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8080/api/pipeline';
+const API_URL = 'https://smart-b-roll-inserter-1.onrender.com/api/pipeline';
 
 export const api = {
   // Status
